@@ -1,0 +1,25 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.0.0">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UserSecretsId>1fc88e50-b28e-4d88-9846-cc39f40454f5</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AppServiceDiagnostics.Web\AppServiceDiagnostics.Web.csproj" />
+    <ProjectReference Include="..\BackendApi\BackendApi.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.Azure.AppService" Version="13.0.0-preview.1.25560.3" />
+    <PackageReference Include="Aspire.Hosting.Azure.CosmosDB" Version="13.0.0" />
+    <PackageReference Include="Aspire.Hosting.Azure.KeyVault" Version="13.0.0" />
+    <PackageReference Include="Aspire.Hosting.Ev2" Version="0.3.0-preview.1.25529.9" />
+    <PackageReference Include="Aspire.Hosting.Geneva" Version="0.3.0-preview.1.25529.9" />
+    <PackageReference Include="Aspire.Hosting.Redis" Version="13.0.0" />
+  </ItemGroup>
+
+</Project>

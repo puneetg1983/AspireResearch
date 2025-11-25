@@ -1,0 +1,85 @@
+﻿@page "/weather"
+@using AppServiceDiagnostics.Models
+@attribute [StreamRendering(true)]
+@attribute [OutputCache(Duration = 5)]
+
+@inject BackendClient BackendApi
+
+<PageTitle>KeyVault Secrets</PageTitle>
+
+<h1>Secrets</h1>
+
+<p>This component demonstrates showing data loaded from a backend API service.</p>
+
+<table class="table">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Value</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var secret in Secrets)
+        {
+            <tr>
+                <td>@secret.Key</td>
+                <td>@secret.Value</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<h1>Certificates</h1>
+<p>This is the list of certificates</p>
+<table class="table">
+    <thead>
+        <tr>
+            <th>Serial</th>
+            <th>Thumbprint</th>
+            <th>SubjectName</th>
+            <th>IssuerName</th>
+            <th>HasPrivateKey</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var cert in Certificates)
+        {
+            <tr>
+                <td>@cert.SerialNumber</td>
+                <td>@cert.Thumbprint</td>
+                <td>@cert.SubjectName</td>
+                <td>@cert.IssuerName</td>
+                <td>@cert.HasPrivateKey</td>
+                
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    private Dictionary<string, string> Secrets = new Dictionary<string, string>();
+    private List<LoadedCert> Certificates = new List<LoadedCert>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var secretNames = await BackendApi.GetSecretNamesAsync();
+        foreach (var name in secretNames)
+        {
+            var value = await BackendApi.GetSecretValueAsync(name);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                Secrets.Add(name, value);
+            }
+        }
+
+        var certs = await BackendApi.GetCertificateNames();
+        foreach(var cert in certs)
+        {
+            var loadedCert = await BackendApi.GetCertificate(cert);
+            if (loadedCert != null)
+            {
+                Certificates.Add(loadedCert);
+            }
+        }
+    }
+}
