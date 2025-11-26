@@ -1,0 +1,359 @@
+@page "/rediscache"
+@using AppServiceDiagnostics.Models
+@inject CacheClient CacheClient
+@inject ILogger<RedisCache> Logger
+@rendermode InteractiveServer
+
+<PageTitle>Cache Management</PageTitle>
+
+<h1>Redis Cache Management</h1>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>Add/Update Cache Item</h5>
+            </div>
+            <div class="card-body">
+                <EditForm Model="@cacheRequest" OnValidSubmit="@SetCacheItem">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary class="text-danger" />
+                    
+                    <div class="mb-3">
+                        <label for="key" class="form-label">Key:</label>
+                        <InputText id="key" class="form-control" @bind-Value="cacheRequest.Key" placeholder="Enter cache key" />
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="value" class="form-label">Value:</label>
+                        <InputTextArea id="value" class="form-control" rows="3" @bind-Value="cacheRequest.Value" placeholder="Enter cache value" />
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="expiration" class="form-label">Expiration (minutes, optional):</label>
+                        <InputNumber id="expiration" class="form-control" @bind-Value="cacheRequest.ExpirationMinutes" placeholder="Leave empty for no expiration" />
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary" disabled="@isLoading">
+                        @if (isLoading)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                            <span>Setting...</span>
+                        }
+                        else
+                        {
+                            <span>Set Cache Item</span>
+                        }
+                    </button>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>Retrieve Cache Item</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="retrieveKey" class="form-label">Key to retrieve:</label>
+                    <div class="input-group">
+                        <InputText id="retrieveKey" class="form-control" @bind-Value="retrieveKey" placeholder="Enter key to retrieve" />
+                        <button class="btn btn-outline-secondary" type="button" @onclick="GetCacheItem" disabled="@isLoading">
+                            @if (isLoading)
+                            {
+                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                            }
+                            else
+                            {
+                                <span>Get</span>
+                            }
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        @if (retrievedItem != null)
+        {
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h6>Retrieved Item</h6>
+                </div>
+                <div class="card-body">
+                    <p><strong>Key:</strong> @retrievedItem.Key</p>
+                    <p><strong>Value:</strong></p>
+                    <pre class="bg-light p-2 rounded">@retrievedItem.Value</pre>
+                    @if (retrievedItem.Expiration.HasValue)
+                    {
+                        <p><strong>Expiration:</strong> @retrievedItem.Expiration.Value.ToString("yyyy-MM-dd HH:mm:ss UTC")</p>
+                    }
+                    else
+                    {
+                        <p><strong>Expiration:</strong> Never expires</p>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(message))
+{
+    <div class="alert @(isError ? "alert-danger" : "alert-success") alert-dismissible fade show mt-3" role="alert">
+        @message
+        <button type="button" class="btn-close" @onclick="ClearMessage" aria-label="Close"></button>
+    </div>
+}
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Cache Keys</h5>
+                <div>
+                    <button class="btn btn-outline-primary btn-sm me-2" @onclick="RefreshKeys" disabled="@isLoading">
+                        @if (isLoading)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        }
+                        else
+                        {
+                            <span>Refresh</span>
+                        }
+                    </button>
+                    <button class="btn btn-outline-danger btn-sm" @onclick="ClearCache" disabled="@isLoading">
+                        @if (isLoading)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        }
+                        else
+                        {
+                            <span>Clear All</span>
+                        }
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                @if (cacheKeys.Any())
+                {
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Key</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var key in cacheKeys)
+                                {
+                                    <tr>
+                                        <td>@key</td>
+                                        <td>
+                                            <button class="btn btn-outline-info btn-sm me-2" @onclick="() => RetrieveSpecificKey(key)" disabled="@isLoading">
+                                                View
+                                            </button>
+                                            <button class="btn btn-outline-danger btn-sm" @onclick="() => DeleteCacheItem(key)" disabled="@isLoading">
+                                                Delete
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                else
+                {
+                    <p class="text-muted">No cache keys found.</p>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private CacheRequest cacheRequest = new CacheRequest();
+    private string retrieveKey = string.Empty;
+    private CacheItem? retrievedItem;
+    private List<string> cacheKeys = new List<string>();
+    private string message = string.Empty;
+    private bool isError = false;
+    private bool isLoading = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshKeys();
+    }
+
+    private async Task SetCacheItem()
+    {
+        if (string.IsNullOrWhiteSpace(cacheRequest.Key) || string.IsNullOrWhiteSpace(cacheRequest.Value))
+        {
+            ShowMessage("Key and Value are required", true);
+            return;
+        }
+
+        isLoading = true;
+        try
+        {
+            var result = await CacheClient.SetCacheItemAsync(cacheRequest);
+            
+            if (result.Success)
+            {
+                ShowMessage(result.Message, false);
+                cacheRequest = new CacheRequest(); // Reset form
+                await RefreshKeys();
+            }
+            else
+            {
+                ShowMessage(result.Message, true);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error setting cache item");
+            ShowMessage($"Error: {ex.Message}", true);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task GetCacheItem()
+    {
+        if (string.IsNullOrWhiteSpace(retrieveKey))
+        {
+            ShowMessage("Please enter a key to retrieve", true);
+            return;
+        }
+
+        isLoading = true;
+        try
+        {
+            var result = await CacheClient.GetCacheItemAsync(retrieveKey);
+            
+            if (result.Success)
+            {
+                retrievedItem = result.Item;
+                ShowMessage("Item retrieved successfully", false);
+            }
+            else
+            {
+                retrievedItem = null;
+                ShowMessage(result.Message, true);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error getting cache item");
+            ShowMessage($"Error: {ex.Message}", true);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task RetrieveSpecificKey(string key)
+    {
+        retrieveKey = key;
+        await GetCacheItem();
+    }
+
+    private async Task DeleteCacheItem(string key)
+    {
+        isLoading = true;
+        try
+        {
+            var result = await CacheClient.DeleteCacheItemAsync(key);
+            
+            if (result.Success)
+            {
+                ShowMessage($"Item '{key}' deleted successfully", false);
+                await RefreshKeys();
+                
+                // Clear retrieved item if it was the deleted one
+                if (retrievedItem?.Key == key)
+                {
+                    retrievedItem = null;
+                }
+            }
+            else
+            {
+                ShowMessage(result.Message, true);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error deleting cache item");
+            ShowMessage($"Error: {ex.Message}", true);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task RefreshKeys()
+    {
+        isLoading = true;
+        try
+        {
+            cacheKeys = await CacheClient.GetAllKeysAsync();
+            ShowMessage($"Found {cacheKeys.Count} cache keys", false);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error refreshing cache keys");
+            ShowMessage($"Error refreshing keys: {ex.Message}", true);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task ClearCache()
+    {
+        isLoading = true;
+        try
+        {
+            var result = await CacheClient.ClearCacheAsync();
+            
+            if (result.Success)
+            {
+                ShowMessage("Cache cleared successfully", false);
+                cacheKeys.Clear();
+                retrievedItem = null;
+            }
+            else
+            {
+                ShowMessage(result.Message, true);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error clearing cache");
+            ShowMessage($"Error: {ex.Message}", true);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ShowMessage(string msg, bool error)
+    {
+        message = msg;
+        isError = error;
+    }
+
+    private void ClearMessage()
+    {
+        message = string.Empty;
+    }
+}

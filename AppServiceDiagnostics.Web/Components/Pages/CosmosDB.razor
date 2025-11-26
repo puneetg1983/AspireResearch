@@ -1,0 +1,458 @@
+@page "/cosmosdb"
+@using AppServiceDiagnostics.Models
+@inject ProfilesClient ProfilesClient
+@inject ILogger<CosmosDB> Logger
+@rendermode InteractiveServer
+
+<PageTitle>Profile Management</PageTitle>
+
+<h1>Cosmos DB Profile Management</h1>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>@(editingProfile != null ? "Update Profile" : "Create New Profile")</h5>
+            </div>
+            <div class="card-body">
+                <EditForm Model="@profileRequest" OnValidSubmit="@SaveProfile">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary class="text-danger" />
+                    
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Name:</label>
+                        <InputText id="name" class="form-control" @bind-Value="profileRequest.Name" placeholder="Enter full name" />
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="email" class="form-label">Email:</label>
+                        <InputText id="email" class="form-control" @bind-Value="profileRequest.Email" placeholder="Enter email address" disabled="@(editingProfile != null)" />
+                        @if (editingProfile != null)
+                        {
+                            <div class="form-text">Email cannot be changed as it's used as the partition key</div>
+                        }
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="department" class="form-label">Department:</label>
+                        <InputText id="department" class="form-control" @bind-Value="profileRequest.Department" placeholder="Enter department" />
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="metadataKey" class="form-label">Metadata (Key-Value pairs):</label>
+                        <div class="input-group mb-2">
+                            <input type="text" class="form-control" @bind="newMetadataKey" placeholder="Key" />
+                            <input type="text" class="form-control" @bind="newMetadataValue" placeholder="Value" />
+                            <button class="btn btn-outline-secondary" type="button" @onclick="AddMetadata">Add</button>
+                        </div>
+                        
+                        @if (profileRequest.Metadata.Any())
+                        {
+                            <div class="border rounded p-2 bg-light">
+                                @foreach (var kvp in profileRequest.Metadata.ToList())
+                                {
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <span><strong>@kvp.Key:</strong> @kvp.Value</span>
+                                        <button class="btn btn-sm btn-outline-danger" type="button" @onclick="() => RemoveMetadata(kvp.Key)">×</button>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                    
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary" disabled="@isLoading">
+                            @if (isLoading)
+                            {
+                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                <span>@(editingProfile != null ? "Updating..." : "Creating...")</span>
+                            }
+                            else
+                            {
+                                <span>@(editingProfile != null ? "Update Profile" : "Create Profile")</span>
+                            }
+                        </button>
+                        
+                        @if (editingProfile != null)
+                        {
+                            <button type="button" class="btn btn-secondary" @onclick="CancelEdit" disabled="@isLoading">Cancel</button>
+                        }
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>Search Profiles</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="searchName" class="form-label">Search by Name:</label>
+                    <div class="input-group">
+                        <InputText id="searchName" class="form-control" @bind-Value="searchQuery.Name" placeholder="Enter name to search" />
+                        <button class="btn btn-outline-secondary" type="button" @onclick="SearchProfiles" disabled="@isProfilesLoading">
+                            @if (isProfilesLoading)
+                            {
+                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                            }
+                            else
+                            {
+                                <span>Search</span>
+                            }
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="searchEmail" class="form-label">Search by Email:</label>
+                    <div class="input-group">
+                        <InputText id="searchEmail" class="form-control" @bind-Value="searchQuery.Email" placeholder="Enter email to search" />
+                        <button class="btn btn-outline-secondary" type="button" @onclick="SearchProfiles" disabled="@isProfilesLoading">
+                            @if (isProfilesLoading)
+                            {
+                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                            }
+                            else
+                            {
+                                <span>Search</span>
+                            }
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="searchDepartment" class="form-label">Search by Department:</label>
+                    <div class="input-group">
+                        <InputText id="searchDepartment" class="form-control" @bind-Value="searchQuery.Department" placeholder="Enter department to search" />
+                        <button class="btn btn-outline-secondary" type="button" @onclick="SearchProfiles" disabled="@isProfilesLoading">
+                            @if (isProfilesLoading)
+                            {
+                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                            }
+                            else
+                            {
+                                <span>Search</span>
+                            }
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(message))
+{
+    <div class="alert @(isError ? "alert-danger" : "alert-success") alert-dismissible fade show mt-3" role="alert">
+        @message
+        <button type="button" class="btn-close" @onclick="ClearMessage" aria-label="Close"></button>
+    </div>
+}
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Profiles (@profiles.Count)</h5>
+                <div>
+                    <button class="btn btn-outline-primary btn-sm me-2" @onclick="LoadAllProfiles" disabled="@isProfilesLoading">
+                        @if (isProfilesLoading)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        }
+                        else
+                        {
+                            <span>Refresh</span>
+                        }
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm" @onclick="ClearSearchResults" disabled="@isProfilesLoading">
+                        Clear Search
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                @if (isProfilesLoading)
+                {
+                    <div class="d-flex justify-content-center align-items-center" style="min-height: 200px;">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <span class="ms-3">Loading profiles...</span>
+                    </div>
+                }
+                else if (profiles.Any())
+                {
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Department</th>
+                                    <th>Metadata</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var profile in profiles)
+                                {
+                                    <tr>
+                                        <td>@profile.Name</td>
+                                        <td>@profile.Email</td>
+                                        <td>@profile.Department</td>
+                                        <td>
+                                            @if (profile.Metadata.Any())
+                                            {
+                                                <small>
+                                                    @string.Join(", ", profile.Metadata.Select(kvp => $"{kvp.Key}: {kvp.Value}"))
+                                                </small>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">None</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <small>@profile.CreatedAt.ToString("yyyy-MM-dd HH:mm")</small>
+                                        </td>
+                                        <td>
+                                            <div class="btn-group btn-group-sm">
+                                                <button class="btn btn-outline-info" @onclick="() => EditProfile(profile)" disabled="@isLoading">
+                                                    Edit
+                                                </button>
+                                                <button class="btn btn-outline-danger" @onclick="() => DeleteProfile(profile)" disabled="@isLoading">
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                else
+                {
+                    <p class="text-muted">No profiles found. Click "Refresh" to load profiles.</p>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private ProfileRequest profileRequest = new ProfileRequest();
+    private ProfileQuery searchQuery = new ProfileQuery();
+    private List<Profile> profiles = new List<Profile>();
+    private Profile? editingProfile;
+    private string message = string.Empty;
+    private bool isError = false;
+    private bool isLoading = false;
+    private bool isProfilesLoading = false;
+    
+    private string newMetadataKey = string.Empty;
+    private string newMetadataValue = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Don't auto-load profiles to improve page load performance
+        // Users can click "Load All Profiles" button when needed
+    }
+
+    private async Task SaveProfile()
+    {
+        if (string.IsNullOrWhiteSpace(profileRequest.Name) || string.IsNullOrWhiteSpace(profileRequest.Email))
+        {
+            ShowMessage("Name and Email are required", true);
+            return;
+        }
+
+        isLoading = true;
+        try
+        {
+            ProfileResponse result;
+            
+            if (editingProfile != null)
+            {
+                result = await ProfilesClient.UpdateProfileAsync(editingProfile.Id, editingProfile.PartitionKey, profileRequest);
+            }
+            else
+            {
+                result = await ProfilesClient.CreateProfileAsync(profileRequest);
+            }
+            
+            if (result.Success)
+            {
+                ShowMessage(result.Message, false);
+                profileRequest = new ProfileRequest(); // Reset form
+                editingProfile = null;
+                await LoadAllProfiles();
+            }
+            else
+            {
+                ShowMessage(result.Message, true);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error saving profile");
+            ShowMessage($"Error: {ex.Message}", true);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task SearchProfiles()
+    {
+        if (string.IsNullOrWhiteSpace(searchQuery.Name) && 
+            string.IsNullOrWhiteSpace(searchQuery.Email) && 
+            string.IsNullOrWhiteSpace(searchQuery.Department))
+        {
+            ShowMessage("Please enter search criteria", true);
+            return;
+        }
+
+        isProfilesLoading = true;
+        try
+        {
+            var result = await ProfilesClient.QueryProfilesAsync(searchQuery);
+            
+            if (result.Success)
+            {
+                profiles = result.Profiles;
+                ShowMessage($"Found {profiles.Count} profiles", false);
+            }
+            else
+            {
+                ShowMessage(result.Message, true);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error searching profiles");
+            ShowMessage($"Error: {ex.Message}", true);
+        }
+        finally
+        {
+            isProfilesLoading = false;
+        }
+    }
+
+    private async Task LoadAllProfiles()
+    {
+        isProfilesLoading = true;
+        try
+        {
+            var result = await ProfilesClient.GetAllProfilesAsync(100);
+            
+            if (result.Success)
+            {
+                profiles = result.Profiles;
+                ShowMessage($"Loaded {profiles.Count} profiles", false);
+            }
+            else
+            {
+                ShowMessage(result.Message, true);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading profiles");
+            ShowMessage($"Error: {ex.Message}", true);
+        }
+        finally
+        {
+            isProfilesLoading = false;
+        }
+    }
+
+    private void EditProfile(Profile profile)
+    {
+        editingProfile = profile;
+        profileRequest = new ProfileRequest
+        {
+            Name = profile.Name,
+            Email = profile.Email,
+            Department = profile.Department,
+            Metadata = new Dictionary<string, object>(profile.Metadata)
+        };
+    }
+
+    private void CancelEdit()
+    {
+        editingProfile = null;
+        profileRequest = new ProfileRequest();
+    }
+
+    private async Task DeleteProfile(Profile profile)
+    {
+        isLoading = true;
+        try
+        {
+            var result = await ProfilesClient.DeleteProfileAsync(profile.Id, profile.PartitionKey);
+            
+            if (result.Success)
+            {
+                ShowMessage($"Profile for {profile.Name} deleted successfully", false);
+                await LoadAllProfiles();
+                
+                // Clear editing if we're editing the deleted profile
+                if (editingProfile?.Id == profile.Id)
+                {
+                    CancelEdit();
+                }
+            }
+            else
+            {
+                ShowMessage(result.Message, true);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error deleting profile");
+            ShowMessage($"Error: {ex.Message}", true);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void AddMetadata()
+    {
+        if (!string.IsNullOrWhiteSpace(newMetadataKey) && !string.IsNullOrWhiteSpace(newMetadataValue))
+        {
+            profileRequest.Metadata[newMetadataKey] = newMetadataValue;
+            newMetadataKey = string.Empty;
+            newMetadataValue = string.Empty;
+        }
+    }
+
+    private void RemoveMetadata(string key)
+    {
+        profileRequest.Metadata.Remove(key);
+    }
+
+    private async Task ClearSearchResults()
+    {
+        searchQuery = new ProfileQuery();
+        await LoadAllProfiles();
+    }
+
+    private void ShowMessage(string msg, bool error)
+    {
+        message = msg;
+        isError = error;
+    }
+
+    private void ClearMessage()
+    {
+        message = string.Empty;
+    }
+}

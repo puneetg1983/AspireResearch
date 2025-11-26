@@ -11,7 +11,7 @@ var secrets = builder.AddAzureKeyVault("azurekv");
 
 var cosmos = builder.AddAzureCosmosDB("cosmos-db");
 var customers = cosmos.AddCosmosDatabase("customers");
-var profiles = customers.AddContainer("profiles", "/id");
+var profiles = customers.AddContainer("profiles-v2", "/partitionKey");
 
 builder.AddAzureContainerAppEnvironment("env");
 
@@ -19,8 +19,11 @@ builder.WithSecureDefaults();
 
 var backendApi = builder.AddProject<Projects.BackendApi>("backendapi")
     .WithHttpHealthCheck("/health")
+    .WithReference(cache)
+    .WaitFor(cache)
     .WithReference(secrets)
-    .WithReference(profiles);
+    .WithReference(cosmos)
+    .WaitFor(cosmos);
 
 builder.AddProject<Projects.AppServiceDiagnostics_Web>("webfrontend")
     .WithExternalHttpEndpoints()

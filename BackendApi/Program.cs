@@ -14,6 +14,21 @@ public class Program
         // Inject Certificate Client and Secret Client for controllers
         builder.AddAzureKeyVaultClient("azurekv");
         builder.AddAzureKeyVaultCertificateClient("azurekv");
+        
+        // Add Redis cache
+        builder.AddRedisClient("cache");
+        
+        // Add Cosmos DB
+        builder.AddAzureCosmosClient("cosmos-db");
+
+        // Configure Cosmos DB serialization options
+        builder.Services.Configure<Microsoft.Azure.Cosmos.CosmosClientOptions>(options =>
+        {
+            options.SerializerOptions = new Microsoft.Azure.Cosmos.CosmosSerializationOptions
+            {
+                PropertyNamingPolicy = Microsoft.Azure.Cosmos.CosmosPropertyNamingPolicy.CamelCase
+            };
+        });
 
         // Add services to the container.
 
