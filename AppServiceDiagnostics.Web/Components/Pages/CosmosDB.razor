@@ -259,8 +259,13 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // Don't auto-load profiles to improve page load performance
-        // Users can click "Load All Profiles" button when needed
+        // Let the page render first, then load profiles asynchronously
+        _ = InvokeAsync(async () =>
+        {
+            await Task.Delay(100); // Small delay to ensure page has rendered
+            await LoadAllProfiles();
+            StateHasChanged(); // Force UI update after loading
+        });
     }
 
     private async Task SaveProfile()
