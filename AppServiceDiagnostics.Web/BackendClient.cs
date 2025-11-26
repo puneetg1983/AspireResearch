@@ -30,4 +30,19 @@ public class BackendClient(HttpClient httpClient)
         var loadedCert = await httpClient.GetFromJsonAsync<LoadedCert>($"/certificates/{certificateName}");
         return loadedCert;
     }
+
+    public async Task<string?> GetAIJokeAsync()
+    {
+        try
+        {
+            var response = await httpClient.GetFromJsonAsync<JokeResponse>("/api/ai/joke");
+            return response?.joke;
+        }
+        catch (Exception)
+        {
+            return "Why did the AI cross the road? To get to the other side of the algorithm!";
+        }
+    }
+
+    private record JokeResponse(string joke);
 }

@@ -1,0 +1,161 @@
+@page "/ai-jokes"
+@using AppServiceDiagnostics.Web
+@inject BackendClient BackendClient
+@inject ILogger<AIJokes> Logger
+
+<PageTitle>AI Jokes</PageTitle>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <h1 class="display-4">🤖 AI Joke Generator</h1>
+            <p class="lead">Get a fresh joke from our AI-powered comedian agent!</p>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-robot"></i> AI Joke Service
+                    </h5>
+                </div>
+                <div class="card-body">
+                    @if (isLoading)
+                    {
+                        <div class="text-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Generating joke...</span>
+                            </div>
+                            <p class="mt-2">Our AI comedian is thinking of a good one...</p>
+                        </div>
+                    }
+                    else if (!string.IsNullOrEmpty(currentJoke))
+                    {
+                        <div class="alert alert-light border" role="alert">
+                            <h6 class="alert-heading">
+                                <i class="bi bi-emoji-laughing"></i> Fresh from the AI:
+                            </h6>
+                            <hr>
+                            <p class="mb-0 fs-5">@currentJoke</p>
+                        </div>
+                    }
+                    
+                    @if (!string.IsNullOrEmpty(errorMessage))
+                    {
+                        <div class="alert alert-warning" role="alert">
+                            <i class="bi bi-exclamation-triangle"></i> @errorMessage
+                        </div>
+                    }
+
+                    <div class="d-grid gap-2 mt-3">
+                        <button class="btn btn-primary btn-lg" @onclick="GenerateJoke" disabled="@isLoading">
+                            @if (isLoading)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                <span>Generating...</span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-lightning-fill me-2"></i>
+                                <span>Get New Joke!</span>
+                            }
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0">
+                        <i class="bi bi-info-circle"></i> About AI Jokes
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <p class="card-text small">
+                        This feature demonstrates Azure AI Foundry integration with Microsoft Agent Framework. 
+                        Our joke agent is powered by AI and generates clean, family-friendly humor on demand.
+                    </p>
+                    <hr>
+                    <div class="d-flex justify-content-between">
+                        <small class="text-muted">Service Status:</small>
+                        <span class="badge bg-success">Active</span>
+                    </div>
+                </div>
+            </div>
+
+            @if (jokeHistory.Any())
+            {
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h6 class="mb-0">
+                            <i class="bi bi-clock-history"></i> Recent Jokes
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        @foreach (var joke in jokeHistory.Take(3))
+                        {
+                            <div class="border-start border-primary ps-3 mb-2">
+                                <p class="mb-1 small">@joke</p>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private string? currentJoke;
+    private string? errorMessage;
+    private bool isLoading = false;
+    private List<string> jokeHistory = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await InvokeAsync(async () =>
+        {
+            await Task.Delay(100); // Prevent blocking during initial load
+            await GenerateJoke();
+        });
+    }
+
+    private async Task GenerateJoke()
+    {
+        isLoading = true;
+        errorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var joke = await BackendClient.GetAIJokeAsync();
+            
+            if (!string.IsNullOrEmpty(joke))
+            {
+                if (!string.IsNullOrEmpty(currentJoke))
+                {
+                    jokeHistory.Insert(0, currentJoke);
+                }
+                currentJoke = joke;
+            }
+            else
+            {
+                errorMessage = "No joke received from the AI service.";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error getting AI joke");
+            errorMessage = $"Error getting joke: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+}

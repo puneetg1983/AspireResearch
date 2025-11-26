@@ -30,8 +30,13 @@ public class Program
             };
         });
 
-        // Add services to the container.
+        // Add AI Service HTTP client
+        builder.Services.AddHttpClient("aiservice", client =>
+        {
+            client.BaseAddress = new Uri(builder.Configuration.GetConnectionString("aiservice") ?? "https://localhost:7228");
+        });
 
+        // Add services to the container.
         builder.Services.AddControllers();
         // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
         builder.Services.AddOpenApi();

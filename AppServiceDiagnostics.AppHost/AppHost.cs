@@ -12,12 +12,19 @@ builder.AddEv2Environment();
 var secrets = builder.AddAzureKeyVault("azurekv");
 
 var cosmos = builder.AddAzureCosmosDB("cosmos-db");
-var customers = cosmos.AddCosmosDatabase("customers");
-var profiles = customers.AddContainer("profiles-v2", "/partitionKey");
+
+// Add Azure AI Foundry for AI-powered joke generation
+var foundry = builder.AddAzureAIFoundry("foundry");
+var chat = foundry.AddDeployment("chat", "gpt-4o-mini", "2024-07-18", "OpenAI");
 
 builder.AddAzureContainerAppEnvironment("env");
 
 builder.WithSecureDefaults();
+
+var aiService = builder.AddProject<Projects.AppServiceDiagnostics_AIService>("aiservice")
+    .WithHttpHealthCheck("/health")
+    .WithReference(foundry)
+    .WaitFor(foundry);
 
 var backendApi = builder.AddProject<Projects.BackendApi>("backendapi")
     .WithHttpHealthCheck("/health")
@@ -26,7 +33,9 @@ var backendApi = builder.AddProject<Projects.BackendApi>("backendapi")
     .WithReference(secrets)
     .WithRoleAssignments(secrets, KeyVaultBuiltInRole.KeyVaultSecretsUser, KeyVaultBuiltInRole.KeyVaultCertificateUser)
     .WithReference(cosmos)
-    .WaitFor(cosmos);
+    .WaitFor(cosmos)
+    .WithReference(aiService)
+    .WaitFor(aiService);
 
 builder.AddProject<Projects.AppServiceDiagnostics_Web>("webfrontend")
     .WithExternalHttpEndpoints()
