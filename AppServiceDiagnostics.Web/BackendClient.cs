@@ -33,15 +33,8 @@ public class BackendClient(HttpClient httpClient)
 
     public async Task<string?> GetAIJokeAsync()
     {
-        try
-        {
-            var response = await httpClient.GetFromJsonAsync<JokeResponse>("/api/ai/joke");
-            return response?.joke;
-        }
-        catch (Exception)
-        {
-            return "Why did the AI cross the road? To get to the other side of the algorithm!";
-        }
+        var response = await httpClient.GetFromJsonAsync<JokeResponse>("/api/ai/joke");
+        return response?.joke;
     }
 
     private record JokeResponse(string joke);
