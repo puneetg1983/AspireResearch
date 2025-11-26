@@ -1,3 +1,5 @@
+using Azure.Provisioning.KeyVault;
+
 var builder = DistributedApplication.CreateBuilder(args);
 
 var cache = builder.AddRedis("cache");
@@ -22,6 +24,7 @@ var backendApi = builder.AddProject<Projects.BackendApi>("backendapi")
     .WithReference(cache)
     .WaitFor(cache)
     .WithReference(secrets)
+    .WithRoleAssignments(secrets, KeyVaultBuiltInRole.KeyVaultSecretsUser, KeyVaultBuiltInRole.KeyVaultCertificateUser)
     .WithReference(cosmos)
     .WaitFor(cosmos);
 
