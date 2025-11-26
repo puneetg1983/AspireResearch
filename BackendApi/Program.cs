@@ -30,10 +30,12 @@ public class Program
             };
         });
 
-        // Add AI Service HTTP client
+        // Add AI Service HTTP client using Aspire service discovery
         builder.Services.AddHttpClient("aiservice", client =>
         {
-            client.BaseAddress = new Uri(builder.Configuration.GetConnectionString("aiservice") ?? "https://localhost:7228");
+            // This URL uses "https+http://" to indicate HTTPS is preferred over HTTP.
+            // Learn more about service discovery scheme resolution at https://aka.ms/dotnet/sdschemes.
+            client.BaseAddress = new Uri("https+http://aiservice");
         });
 
         // Add services to the container.
