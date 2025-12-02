@@ -12,6 +12,7 @@
     <ProjectReference Include="..\AppServiceDiagnostics.Web\AppServiceDiagnostics.Web.csproj" />
     <ProjectReference Include="..\BackendApi\BackendApi.csproj" />
     <ProjectReference Include="..\AppServiceDiagnostics.AIService\AppServiceDiagnostics.AIService.csproj" />
+    <ProjectReference Include="..\Aspire.Hosting.Azure.ManagedIdentity\Aspire.Hosting.Azure.ManagedIdentity.csproj" IsAspireProjectResource="false" />
   </ItemGroup>
 
   <ItemGroup>

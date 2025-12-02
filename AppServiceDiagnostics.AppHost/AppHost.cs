@@ -21,11 +21,7 @@ builder.AddAzureContainerAppEnvironment("env");
 
 builder.WithSecureDefaults();
 
-var aiService = builder.AddProject<Projects.AppServiceDiagnostics_AIService>("aiservice")
-    .WithHttpHealthCheck("/health")
-    .WithReference(foundry)
-    .WaitFor(foundry);
-
+// BackendApi: will use managed identity to call AIService
 var backendApi = builder.AddProject<Projects.BackendApi>("backendapi")
     .WithHttpHealthCheck("/health")
     .WithReference(cache)
@@ -33,7 +29,20 @@ var backendApi = builder.AddProject<Projects.BackendApi>("backendapi")
     .WithReference(secrets)
     .WithRoleAssignments(secrets, KeyVaultBuiltInRole.KeyVaultSecretsUser, KeyVaultBuiltInRole.KeyVaultCertificateUser)
     .WithReference(cosmos)
-    .WaitFor(cosmos)
+    .WaitFor(cosmos);
+
+// Provision user-assigned managed identity for BackendApi
+var backendApiIdentity = backendApi.WithUserAssignedManagedIdentity();
+
+// AIService: will validate incoming managed identity tokens from BackendApi only
+var aiService = builder.AddProject<Projects.AppServiceDiagnostics_AIService>("aiservice")
+    .WithHttpHealthCheck("/health")
+    .WithReference(foundry)
+    .WaitFor(foundry)
+    .AllowManagedIdentities(backendApiIdentity);
+
+// Complete BackendApi configuration with AIService reference
+backendApi
     .WithReference(aiService)
     .WaitFor(aiService);
 

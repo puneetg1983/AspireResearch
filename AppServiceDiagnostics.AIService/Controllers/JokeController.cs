@@ -1,3 +1,5 @@
+using Aspire.Azure.ManagedIdentity.Client;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using AppServiceDiagnostics.AIService;
 
@@ -17,6 +19,8 @@ public class JokeController : ControllerBase
     }
 
     [HttpGet]
+    // Require managed identity authorization in Production, allow anonymous in Development
+    [Authorize(Policy = ManagedIdentityAuthConstants.PolicyName)]
     public async Task<ActionResult<string>> GetJoke(CancellationToken cancellationToken = default)
     {
         try

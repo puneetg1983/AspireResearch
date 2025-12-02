@@ -10,12 +10,14 @@
     <PackageReference Include="Aspire.Azure.Security.KeyVault" Version="13.0.0" />
     <PackageReference Include="Aspire.Microsoft.Azure.Cosmos" Version="13.0.0" />
     <PackageReference Include="Aspire.StackExchange.Redis" Version="13.0.0" />
+    <PackageReference Include="Azure.Identity" Version="1.17.0" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.11" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\AppServiceDiagnostics.Models\AppServiceDiagnostics.Models.csproj" />
     <ProjectReference Include="..\AppServiceDiagnostics.ServiceDefaults\AppServiceDiagnostics.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\Aspire.Azure.ManagedIdentity.Client\Aspire.Azure.ManagedIdentity.Client.csproj" />
   </ItemGroup>
 
 </Project>

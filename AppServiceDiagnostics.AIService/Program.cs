@@ -1,4 +1,5 @@
 using AppServiceDiagnostics.AIService;
+using Aspire.Azure.ManagedIdentity.Client;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -7,6 +8,11 @@ builder.AddServiceDefaults();
 
 // Add Azure Chat Completions client using Aspire 13 specifications
 builder.AddAzureChatCompletionsClient("foundry");
+
+// Configure managed identity authentication
+builder.Services.AddManagedIdentityAuthentication(
+    builder.Configuration,
+    builder.Environment);
 
 // Add services to the container.
 builder.Services.AddControllers();
@@ -27,6 +33,8 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+// Enable managed identity authentication middleware
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();

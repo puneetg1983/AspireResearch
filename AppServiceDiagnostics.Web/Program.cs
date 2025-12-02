@@ -17,7 +17,7 @@ builder.Services.AddHttpClient<BackendClient>(client =>
     {
         // This URL uses "https+http://" to indicate HTTPS is preferred over HTTP.
         // Learn more about service discovery scheme resolution at https://aka.ms/dotnet/sdschemes.
-        client.BaseAddress = new("https+http://backendapi");
+        client.BaseAddress = new("https+http://backendapi");        
     });
 
 builder.Services.AddHttpClient<CacheClient>(client =>
