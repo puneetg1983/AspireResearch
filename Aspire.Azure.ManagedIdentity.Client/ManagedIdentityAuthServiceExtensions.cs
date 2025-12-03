@@ -28,12 +28,12 @@ public static class ManagedIdentityAuthServiceExtensions
         IHostEnvironment environment,
         string scope)
     {
-        var requireAuth = configuration.GetValue<bool>("REQUIRE_MANAGED_IDENTITY_AUTH");
+        var requireAuth = configuration.GetValue<bool>(ManagedIdentityAuthConstants.RequireManagedIdentityAuthKey);
 
         if (requireAuth && environment.IsProduction())
         {
-            var tenantId = configuration["AZURE_TENANT_ID"] 
-                ?? throw new InvalidOperationException("AZURE_TENANT_ID must be configured in Production when REQUIRE_MANAGED_IDENTITY_AUTH is enabled");
+            var tenantId = configuration[ManagedIdentityAuthConstants.AzureTenantIdKey] 
+                ?? throw new InvalidOperationException($"{ManagedIdentityAuthConstants.AzureTenantIdKey} must be configured in Production when {ManagedIdentityAuthConstants.RequireManagedIdentityAuthKey} is enabled");
 
             services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 .AddJwtBearer(options =>
@@ -69,7 +69,7 @@ public static class ManagedIdentityAuthServiceExtensions
                             var clientId = context.Principal?.Claims.FirstOrDefault(c => c.Type == "appid")?.Value;
                             
                             // Get allowed client IDs from configuration (comma-separated)
-                            var allowedClientIds = config["ASPIRE_EXTENSIONS_ALLOWED_CLIENT_IDS"]?.Split(',', StringSplitOptions.RemoveEmptyEntries);
+                            var allowedClientIds = config[ManagedIdentityAuthConstants.AllowedClientIdsKey]?.Split(',', StringSplitOptions.RemoveEmptyEntries);
                             
                             if (allowedClientIds != null && allowedClientIds.Length > 0)
                             {

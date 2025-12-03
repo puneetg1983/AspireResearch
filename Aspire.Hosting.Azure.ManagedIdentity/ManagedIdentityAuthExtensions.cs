@@ -28,7 +28,7 @@ public static class ManagedIdentityAuthExtensions
         builder.WithAnnotation(new ManagedIdentityAuthenticationAnnotation(identity));
         
         // Configure environment to indicate managed identity should be used
-        builder.WithEnvironment("ASPIRE_EXTENSIONS_USE_MANAGED_IDENTITY_AUTH", "true");
+        builder.WithEnvironment(ManagedIdentityEnvironmentVariables.UseManagedIdentityAuth, "true");
         
         // Return a reference without adding to the resource model
         // This prevents the identity from appearing in the dashboard
@@ -57,8 +57,8 @@ public static class ManagedIdentityAuthExtensions
         {
             // Generate comma-separated list of identity references
             var identityRefs = string.Join(",", identityResources.Select(i => $"{{{i.Name}.clientId}}"));
-            builder.WithEnvironment("ASPIRE_EXTENSIONS_ALLOWED_CLIENT_IDS", identityRefs);
-            builder.WithEnvironment("ASPIRE_EXTENSIONS_REQUIRE_MANAGED_IDENTITY_AUTH", "true");
+            builder.WithEnvironment(ManagedIdentityEnvironmentVariables.AllowedClientIds, identityRefs);
+            builder.WithEnvironment(ManagedIdentityEnvironmentVariables.RequireManagedIdentityAuth, "true");
         }
         
         return builder;

@@ -30,7 +30,7 @@ public class ManagedIdentityAuthHandler : DelegatingHandler
         _scope = scope;
 
         // Only enable in Production when explicitly configured
-        _isEnabled = _configuration.GetValue<bool>("ASPIRE_EXTENSIONS_USE_MANAGED_IDENTITY_AUTH") && 
+        _isEnabled = _configuration.GetValue<bool>(ManagedIdentityAuthConstants.UseManagedIdentityAuthKey) && 
                      _environment.IsProduction();
 
         if (_isEnabled)

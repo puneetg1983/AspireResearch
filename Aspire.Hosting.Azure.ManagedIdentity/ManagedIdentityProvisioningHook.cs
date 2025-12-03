@@ -46,7 +46,7 @@ internal class ManagedIdentityProvisioningHook : IDistributedApplicationEventing
             envResource.Annotations.Add(new EnvironmentCallbackAnnotation(context =>
             {
                 // This will be replaced with actual client ID during deployment
-                context.EnvironmentVariables[$"ASPIRE_EXTENSIONS_MANAGED_IDENTITY_CLIENT_ID"] = $"{{{identity.Name}.clientId}}";
+                context.EnvironmentVariables[ManagedIdentityEnvironmentVariables.ManagedIdentityClientId] = $"{{{identity.Name}.clientId}}";
             }));
         }
     }
@@ -68,10 +68,10 @@ internal class ManagedIdentityProvisioningHook : IDistributedApplicationEventing
             
             envResource.Annotations.Add(new EnvironmentCallbackAnnotation(context =>
             {
-                context.EnvironmentVariables["ASPIRE_EXTENSIONS_ALLOWED_CLIENT_IDS"] = clientIds;
+                context.EnvironmentVariables[ManagedIdentityEnvironmentVariables.AllowedClientIds] = clientIds;
                 // Automatically configure the tenant ID from Azure provisioning context
                 // This will be resolved to the actual tenant ID during deployment
-                context.EnvironmentVariables["ASPIRE_EXTENSIONS_AZURE_TENANT_ID"] = "{env.AZURE_TENANT_ID}";
+                context.EnvironmentVariables[ManagedIdentityEnvironmentVariables.AzureTenantId] = "{env.AZURE_TENANT_ID}";
             }));
         }
     }

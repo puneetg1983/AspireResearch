@@ -30,4 +30,9 @@ public static class ManagedIdentityAuthConstants
     /// Configuration key to enable/disable managed identity authentication.
     /// </summary>
     public const string UseManagedIdentityAuthKey = "ASPIRE_EXTENSIONS_USE_MANAGED_IDENTITY_AUTH";
+    
+    /// <summary>
+    /// Configuration key to require managed identity authentication validation.
+    /// </summary>
+    public const string RequireManagedIdentityAuthKey = "ASPIRE_EXTENSIONS_REQUIRE_MANAGED_IDENTITY_AUTH";
 }
