@@ -12,7 +12,8 @@ builder.AddAzureChatCompletionsClient("foundry");
 // Configure managed identity authentication
 builder.Services.AddManagedIdentityAuthentication(
     builder.Configuration,
-    builder.Environment);
+    builder.Environment,
+    "https://management.azure.com");
 
 // Add services to the container.
 builder.Services.AddControllers();

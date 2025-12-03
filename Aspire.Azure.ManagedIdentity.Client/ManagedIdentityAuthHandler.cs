@@ -16,16 +16,18 @@ public class ManagedIdentityAuthHandler : DelegatingHandler
     private readonly ILogger<ManagedIdentityAuthHandler> _logger;
     private readonly TokenCredential? _credential;
     private readonly bool _isEnabled;
-    private const string DefaultScope = "https://management.azure.com/.default";
+    private readonly string _scope;
 
     public ManagedIdentityAuthHandler(
         IHostEnvironment environment,
         IConfiguration configuration,
-        ILogger<ManagedIdentityAuthHandler> logger)
+        ILogger<ManagedIdentityAuthHandler> logger,
+        string scope)
     {
         _environment = environment;
         _configuration = configuration;
         _logger = logger;
+        _scope = scope;
 
         // Only enable in Production when explicitly configured
         _isEnabled = _configuration.GetValue<bool>("ASPIRE_EXTENSIONS_USE_MANAGED_IDENTITY_AUTH") && 
@@ -52,7 +54,7 @@ public class ManagedIdentityAuthHandler : DelegatingHandler
             try
             {
                 var tokenResult = await _credential.GetTokenAsync(
-                    new TokenRequestContext(new[] { DefaultScope }),
+                    new TokenRequestContext(new[] { _scope }),
                     cancellationToken);
 
                 request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(

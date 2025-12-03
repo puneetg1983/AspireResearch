@@ -12,11 +12,6 @@ public static class ManagedIdentityAuthConstants
     public const string PolicyName = "RequireManagedIdentity";
     
     /// <summary>
-    /// The default token scope used for managed identity authentication.
-    /// </summary>
-    public const string DefaultTokenScope = "https://management.azure.com/.default";
-    
-    /// <summary>
     /// Environment variable name for the managed identity client ID.
     /// </summary>
     public const string ManagedIdentityClientIdKey = "ASPIRE_EXTENSIONS_MANAGED_IDENTITY_CLIENT_ID";

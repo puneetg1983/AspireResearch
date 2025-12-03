@@ -18,10 +18,15 @@ public static class ManagedIdentityAuthServiceExtensions
     /// In Production: Requires valid Entra ID tokens from configured client IDs.
     /// In Development: Allows all requests.
     /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configuration">The configuration.</param>
+    /// <param name="environment">The host environment.</param>
+    /// <param name="scope">The OAuth2 scope/audience for token validation (e.g., "https://management.azure.com").</param>
     public static IServiceCollection AddManagedIdentityAuthentication(
         this IServiceCollection services,
         IConfiguration configuration,
-        IHostEnvironment environment)
+        IHostEnvironment environment,
+        string scope)
     {
         var requireAuth = configuration.GetValue<bool>("REQUIRE_MANAGED_IDENTITY_AUTH");
 
@@ -34,7 +39,7 @@ public static class ManagedIdentityAuthServiceExtensions
                 .AddJwtBearer(options =>
                 {
                     options.Authority = $"https://login.microsoftonline.com/{tenantId}";
-                    options.Audience = "https://management.azure.com";
+                    options.Audience = scope;
                     
                     options.TokenValidationParameters = new TokenValidationParameters
                     {

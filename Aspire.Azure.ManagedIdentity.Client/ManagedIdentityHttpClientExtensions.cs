@@ -11,9 +11,15 @@ public static class ManagedIdentityHttpClientExtensions
     /// <summary>
     /// Configures the HTTP client to use managed identity authentication for outbound requests.
     /// </summary>
-    public static IHttpClientBuilder AddManagedIdentityAuth(this IHttpClientBuilder builder)
+    /// <param name="builder">The HTTP client builder.</param>
+    /// <param name="scope">The OAuth2 scope for token requests (e.g., "https://management.azure.com/.default").</param>
+    public static IHttpClientBuilder AddManagedIdentityAuth(this IHttpClientBuilder builder, string scope)
     {
-        builder.Services.AddTransient<ManagedIdentityAuthHandler>();
+        builder.Services.AddTransient(sp => new ManagedIdentityAuthHandler(
+            sp.GetRequiredService<IHostEnvironment>(),
+            sp.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<ManagedIdentityAuthHandler>>(),
+            scope));
         builder.AddHttpMessageHandler<ManagedIdentityAuthHandler>();
         return builder;
     }

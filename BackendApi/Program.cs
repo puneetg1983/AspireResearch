@@ -37,7 +37,7 @@ public class Program
             // Learn more about service discovery scheme resolution at https://aka.ms/dotnet/sdschemes.
             client.BaseAddress = new Uri("https+http://aiservice");
         })
-        .AddManagedIdentityAuth(); // Add managed identity authentication
+        .AddManagedIdentityAuth("https://management.azure.com/.default"); // Add managed identity authentication
 
         // Add services to the container.
         builder.Services.AddControllers();
