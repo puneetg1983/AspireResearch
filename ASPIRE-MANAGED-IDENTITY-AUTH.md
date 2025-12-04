@@ -1,27 +1,191 @@
 # Aspire Managed Identity Authentication Feature
 
-## Executive Summary
+## What This Feature Does
 
-We implemented a complete service-to-service authentication solution for .NET Aspire that enables one service to securely call another using Azure Managed Identities with Azure AD token validation. The solution provides:
+This feature enables secure service-to-service authentication in .NET Aspire using Azure Managed Identities. One service can call another, and the receiving service validates that the caller is authorized using Azure AD tokens with Object ID (OID) validation.
 
-- **Declarative API** for specifying which managed identities can call a service
-- **Automatic bicep generation** with proper parameter references for Object IDs (OIDs)
-- **JWT token validation** with principal ID verification
-- **Full integration** with Aspire's provisioning infrastructure
+**Key Benefits:**
+- ✅ Declarative configuration in AppHost
+- ✅ Automatic bicep generation with proper parameter references
+- ✅ Zero secrets management (uses managed identities)
+- ✅ Production-ready JWT validation
+- ✅ Supports multiple allowed caller identities
 
-## Problem Statement
+---
 
-When building microservices on Azure Container Apps with Aspire, services need to authenticate each other. The requirements are:
+## Quick Start Guide for End Users
 
-1. **Service A** (BackendApi) needs to call **Service B** (AIService) using its managed identity
-2. **Service B** should validate the caller's identity and only allow specific services
-3. The configuration should be **declarative in the AppHost**
-4. The identity validation should happen **at runtime** using Object IDs from JWT tokens
-5. Bicep templates must be generated with **proper parameter references**, not literal strings
+### Prerequisites
 
-## Solution Architecture
+1. Two .NET Aspire services you want to connect
+2. Azure AD App Registration for your service (instructions below)
+3. NuGet packages:
+   - `Aspire.Hosting.Azure.ManagedIdentity` (in AppHost)
+   - `Aspire.Azure.ManagedIdentity.Client` (in services)
 
-### High-Level Flow
+### Step 1: Configure Your AppHost
+
+In `AppHost/Program.cs`:
+
+```csharp
+var builder = DistributedApplication.CreateBuilder(args);
+
+// Create managed identities for both services
+var backendApiIdentity = builder.AddAzureUserAssignedIdentity("backendapi-identity");
+var aiServiceIdentity = builder.AddAzureUserAssignedIdentity("aiservice-identity");
+
+// Configure AIService to accept calls from BackendApi
+var aiservice = builder.AddProject<Projects.AIService>("aiservice")
+    .WithExternalHttpEndpoints()
+    .WithIdentity(aiServiceIdentity)
+    .AllowManagedIdentities(backendApiIdentity);  // ← Key configuration
+
+// Configure BackendApi with its identity
+var backendApi = builder.AddProject<Projects.BackendApi>("backendapi")
+    .WithReference(aiservice)
+    .WithIdentity(backendApiIdentity);
+
+builder.Build().Run();
+```
+
+**What this does:**
+- Creates managed identities in Azure
+- Configures AIService to only accept requests from BackendApi
+- Automatically passes Object IDs (OIDs) as environment variables
+
+### Step 2: Configure the Protected Service (AIService)
+
+The service that **receives** requests and validates authentication.
+
+In `AIService/Program.cs`:
+
+```csharp
+using Aspire.Azure.ManagedIdentity.Client;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.AddServiceDefaults();
+
+// Add managed identity authentication
+builder.Services.AddManagedIdentityAuthentication(
+    builder.Configuration,
+    builder.Environment,
+    audience: "YOUR_AAD_CLIENT_ID",     // From Azure AD App Registration
+    tenantId: "YOUR_AZURE_AD_TENANT_ID" // Your Azure AD Tenant ID
+);
+
+var app = builder.Build();
+
+app.MapDefaultEndpoints();
+
+// Enable authentication/authorization
+app.UseAuthentication();
+app.UseAuthorization();
+
+// Protected endpoint - requires valid managed identity token
+app.MapGet("/api/joke", () => "Why did the chicken cross the road?")
+    .RequireAuthorization(ManagedIdentityAuthConstants.PolicyName);
+
+app.Run();
+```
+
+### Step 3: Configure the Calling Service (BackendApi)
+
+The service that **makes** requests to the protected service.
+
+In `BackendApi/Program.cs`:
+
+```csharp
+using Aspire.Azure.ManagedIdentity.Client;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.AddServiceDefaults();
+
+// Configure HttpClient with managed identity authentication
+builder.Services.AddHttpClient("aiservice", client =>
+{
+    client.BaseAddress = new Uri("https+http://aiservice");  // Service discovery
+})
+.AddManagedIdentityAuth("api://YOUR_AAD_CLIENT_ID/.default");  // AAD scope
+
+var app = builder.Build();
+
+app.MapGet("/", async (IHttpClientFactory httpClientFactory) =>
+{
+    var client = httpClientFactory.CreateClient("aiservice");
+    var joke = await client.GetStringAsync("/api/joke");
+    return joke;
+});
+
+app.Run();
+```
+
+### Step 4: Create Azure AD App Registration
+
+1. **Go to Azure Portal** → Azure Active Directory → App Registrations
+2. **Click "New registration"**:
+   - **Name**: `AIService` (or your service name)
+   - **Supported account types**: Single tenant
+   - Click **Register**
+3. **Note the Client ID** (Application ID) - use this as the `audience` parameter
+4. **Configure API Exposure**:
+   - Go to **Expose an API**
+   - Set **Application ID URI**: `api://{ClientId}` (auto-generated)
+   - Click **Add a scope**: name it `access_as_user` or use `.default`
+5. **Note your Tenant ID**:
+   - Go to Azure Active Directory → Overview
+   - Copy the **Tenant ID**
+
+### Step 5: Deploy to Azure
+
+```bash
+# From AppHost directory
+azd init
+azd up
+```
+
+**What happens during deployment:**
+1. Aspire generates bicep templates with proper Object ID references
+2. Managed identities are created in Azure
+3. Container apps are deployed with the correct OIDs in environment variables
+4. Authentication is automatically configured
+
+### Supporting Multiple Callers
+
+To allow multiple services to call your protected service:
+
+```csharp
+var service1Identity = builder.AddAzureUserAssignedIdentity("service1-identity");
+var service2Identity = builder.AddAzureUserAssignedIdentity("service2-identity");
+var service3Identity = builder.AddAzureUserAssignedIdentity("service3-identity");
+
+var aiservice = builder.AddProject<Projects.AIService>("aiservice")
+    .WithIdentity(aiServiceIdentity)
+    .AllowManagedIdentities(service1Identity, service2Identity, service3Identity);
+    // Supports up to 4 identities
+```
+
+### Quick Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| **401 Unauthorized** | Check Azure AD App Registration settings and tenant ID |
+| **"Rejected unauthorized principal"** | Verify managed identity Object ID matches in Azure Portal |
+| **Audience validation failed** | Use just the Client ID GUID, not `api://` prefix for audience |
+| **Issuer validation failed** | Ensure authority URL includes `/v2.0` endpoint |
+
+**Check logs in Azure Container Apps** for detailed error messages.
+
+---
+
+## Technical Implementation Details
+
+> **Note**: The sections below explain how this feature was implemented. End users don't need to understand these internals to use the feature - the Quick Start Guide above is sufficient for integration.
+
+### Architecture Overview
+
+**High-Level Flow:**
 
 ```
 ┌─────────────────┐
@@ -48,7 +212,28 @@ When building microservices on Azure Container Apps with Aspire, services need t
 └─────────────────┘
 ```
 
-## Technical Implementation
+### Design Decisions
+
+**Why Object IDs (OIDs) instead of Client IDs?**
+- Azure RBAC uses Object IDs for authorization
+- More semantically correct for "who can access this service?"
+- Aligns with how JWT tokens identify service principals
+- Better separation between application identity (Client ID) and security principal (Object ID)
+
+**Why ReferenceExpression for Multiple Identities?**
+- Cannot use `string.Join()` - evaluates immediately to literal string
+- `ReferenceExpression.Create()` preserves structural information
+- Allows Aspire's bicep generator to create proper parameter references
+- Results in runtime environment variables containing actual GUIDs, not literal strings
+
+**Why BicepOutputReference?**
+- Preserves the relationship between identity resource and its outputs
+- Enables Aspire to generate proper bicep parameters
+- Ensures type safety in the provisioning pipeline
+
+---
+
+## Implementation Code
 
 ### 1. Extension Method API
 
@@ -465,234 +650,171 @@ module aiservice './aiservice-containerapp.module.bicep' = {
 - Use `ReferenceExpression.Create()` for multiple identities to maintain references
 - Result: Bicep contains proper parameter references, runtime gets actual OID values
 
-## End-User Documentation
+## Advanced Usage and Reference
 
-### Prerequisites
+### Environment Variables
 
-1. Azure AD App Registration for your service
-2. Two .NET Aspire projects you want to connect
-3. NuGet packages (included in solution):
-   - `Aspire.Hosting.Azure.ManagedIdentity` (hosting extensions)
-   - `Aspire.Azure.ManagedIdentity.Client` (service library)
+The feature uses the following environment variable (automatically configured):
 
-### Step 1: Configure AppHost
+| Variable | Description | Example Value |
+|----------|-------------|---------------|
+| `ASPIRE_EXTENSIONS_ALLOWED_PRINCIPAL_IDS` | Comma-separated list of Object IDs (OIDs) | `5e9ccc1b-12c0-460f-be42-585ac084ba52` |
 
-In your `AppHost/Program.cs`:
+This is automatically set by Aspire during deployment. You don't need to configure it manually.
+
+### Authorization Policy Constant
+
+Use `ManagedIdentityAuthConstants.PolicyName` in your authorization requirements:
 
 ```csharp
-var builder = DistributedApplication.CreateBuilder(args);
+// On minimal API endpoints
+app.MapGet("/api/data", () => { ... })
+   .RequireAuthorization(ManagedIdentityAuthConstants.PolicyName);
 
-// Create managed identities for both services
-var backendApiIdentity = builder.AddAzureUserAssignedIdentity("backendapi-identity");
-var aiServiceIdentity = builder.AddAzureUserAssignedIdentity("aiservice-identity");
-
-// Configure AIService to accept calls from BackendApi
-var aiservice = builder.AddProject<Projects.AIService>("aiservice")
-    .WithExternalHttpEndpoints()
-    .WithIdentity(aiServiceIdentity)
-    .AllowManagedIdentities(backendApiIdentity);  // ← Key configuration
-
-// Configure BackendApi with its identity
-var backendApi = builder.AddProject<Projects.BackendApi>("backendapi")
-    .WithReference(aiservice)
-    .WithIdentity(backendApiIdentity);
-
-builder.Build().Run();
+// On controllers
+[Authorize(Policy = ManagedIdentityAuthConstants.PolicyName)]
+public class DataController : ControllerBase { ... }
 ```
 
-**What This Does:**
-- Creates two managed identities in Azure
-- Assigns identities to each service
-- Configures AIService to only accept requests from BackendApi's managed identity
-- Automatically generates bicep with the correct Object ID references
+### Local Development
 
-### Step 2: Configure the Called Service (AIService)
+In development mode, authentication is **optional by default**. To test authentication locally:
 
-In `AIService/Program.cs`:
+1. Set up Azure AD App Registration (see Step 4 above)
+2. Authenticate with Azure CLI: `az login`
+3. Set environment variable:
+   ```powershell
+   $env:ASPIRE_EXTENSIONS_ALLOWED_PRINCIPAL_IDS = "your-test-oid"
+   ```
+4. Run your services
 
-```csharp
-using Aspire.Azure.ManagedIdentity.Client;
+### Logging and Monitoring
 
-var builder = WebApplication.CreateBuilder(args);
+The feature logs authentication events:
 
-builder.AddServiceDefaults();
-
-// Add managed identity authentication
-builder.Services.AddManagedIdentityAuthentication(
-    builder.Configuration,
-    builder.Environment,
-    audience: "1d922779-2742-4cf2-8c82-425cf2c60aa8",  // Your AAD App Registration Client ID
-    tenantId: "72f988bf-86f1-41af-91ab-2d7cd011db47"  // Your Azure AD Tenant ID
-);
-
-var app = builder.Build();
-
-app.MapDefaultEndpoints();
-
-// Require authentication on all endpoints
-app.UseAuthentication();
-app.UseAuthorization();
-
-// Your API endpoints
-app.MapGet("/api/joke", () => "Why did the chicken cross the road?")
-    .RequireAuthorization(ManagedIdentityAuthConstants.PolicyName);
-
-app.Run();
+**Successful authentication:**
+```
+Successfully authenticated authorized managed identity (OID): 5e9ccc1b-12c0-460f-be42-585ac084ba52
 ```
 
-### Step 3: Configure the Calling Service (BackendApi)
+**Failed authentication:**
+```
+Rejected unauthorized principal: (null). Allowed: 5e9ccc1b-12c0-460f-be42-585ac084ba52
+```
 
-In `BackendApi/Program.cs`:
-
-```csharp
-using Aspire.Azure.ManagedIdentity.Client;
-
-var builder = WebApplication.CreateBuilder(args);
-
-builder.AddServiceDefaults();
-
-// Configure HttpClient with managed identity authentication
-builder.Services.AddHttpClient("aiservice", client =>
+**To enable detailed logging**, add to `appsettings.json`:
+```json
 {
-    client.BaseAddress = new Uri("https+http://aiservice");  // Service discovery
-})
-.AddManagedIdentityAuth("api://1d922779-2742-4cf2-8c82-425cf2c60aa8/.default");  // AAD scope
-
-var app = builder.Build();
-
-app.MapGet("/", async (IHttpClientFactory httpClientFactory) =>
-{
-    var client = httpClientFactory.CreateClient("aiservice");
-    var joke = await client.GetStringAsync("/api/joke");
-    return joke;
-});
-
-app.Run();
+  "Logging": {
+    "LogLevel": {
+      "ManagedIdentityAuth": "Information"
+    }
+  }
+}
 ```
 
-### Step 4: Create Azure AD App Registration
+## Troubleshooting Guide
 
-1. Go to Azure Portal → Azure Active Directory → App Registrations
-2. Create new registration:
-   - **Name**: `AIService` (or your preferred name)
-   - **Supported account types**: Single tenant
-3. Note the **Client ID** (use as `audience` parameter)
-4. Go to **Expose an API**:
-   - Set **Application ID URI**: `api://{ClientId}`
-   - Add a scope: `access_as_user` (or `.default`)
-5. Note your **Tenant ID** from AAD overview
+### Common Issues and Solutions
 
-### Step 5: Deploy to Azure
+#### 1. "Rejected unauthorized principal: (null)"
 
-```bash
-# From AppHost directory
-azd init
-azd up
-```
+**Symptoms**: 401 Unauthorized with log message showing null principal.
 
-Aspire will:
-1. Generate bicep templates with proper parameter references
-2. Create managed identities in Azure
-3. Deploy container apps with the correct Object IDs in environment variables
-4. Configure all authentication settings
+**Cause**: The Object ID claim is not being extracted from the token.
 
-### Multiple Allowed Identities
+**Solution**: 
+- The library already handles this - managed identity tokens use full URI claim types
+- Verify your managed identity is correctly configured in Azure
+- Check the identity has the correct permissions
 
-To allow multiple services to call AIService:
-
-```csharp
-var service1Identity = builder.AddAzureUserAssignedIdentity("service1-identity");
-var service2Identity = builder.AddAzureUserAssignedIdentity("service2-identity");
-var service3Identity = builder.AddAzureUserAssignedIdentity("service3-identity");
-
-var aiservice = builder.AddProject<Projects.AIService>("aiservice")
-    .WithIdentity(aiServiceIdentity)
-    .AllowManagedIdentities(service1Identity, service2Identity, service3Identity);  // Up to 4 identities
-```
-
-The environment variable will contain: `{oid1},{oid2},{oid3}`
-
-## Troubleshooting
-
-### Issue: "Rejected unauthorized principal: (null)"
-
-**Cause**: The OID claim is not being extracted from the token.
-
-**Solution**: Managed identity tokens use full URI claim types. Ensure you're checking:
-```csharp
-c.Type == "http://schemas.microsoft.com/identity/claims/objectidentifier"
-```
-
-**Debug**: Log all claims to see what's in the token:
+**Debug**: Add temporary logging to see token claims:
 ```csharp
 var allClaims = string.Join(", ", context.Principal.Claims.Select(c => $"{c.Type}={c.Value}"));
 logger.LogInformation("JWT Claims: {Claims}", allClaims);
 ```
 
-### Issue: Audience Validation Failed
+#### 2. Audience Validation Failed
 
-**Error**: `IDX10214: Audience validation failed`
+**Error**: `IDX10214: Audience validation failed. Audiences: 'api://xxxxx'. Did not match validationParameters.ValidAudience: 'xxxxx'`
 
-**Cause**: Using `api://` prefix in audience configuration.
+**Cause**: Using `api://` prefix in the `audience` parameter.
 
-**Solution**: Use just the GUID:
+**Solution**: Use only the Client ID GUID:
 ```csharp
-options.Audience = "1d922779-2742-4cf2-8c82-425cf2c60aa8";  // ✓
-// NOT: "api://1d922779-2742-4cf2-8c82-425cf2c60aa8"  // ✗
+// ✓ Correct
+builder.Services.AddManagedIdentityAuthentication(config, env, 
+    audience: "1d922779-2742-4cf2-8c82-425cf2c60aa8", ...);
+
+// ✗ Incorrect
+builder.Services.AddManagedIdentityAuthentication(config, env,
+    audience: "api://1d922779-2742-4cf2-8c82-425cf2c60aa8", ...);
 ```
 
-### Issue: Issuer Validation Failed
+#### 3. Issuer Validation Failed
 
-**Error**: `IDX10205: Issuer validation failed`
+**Error**: `IDX10205: Issuer validation failed. Issuer: 'https://sts.windows.net/...'`
 
-**Cause**: Not using v2.0 endpoint.
+**Cause**: The library is configured for v2.0 endpoint, but receiving v1.0 tokens.
 
-**Solution**: Ensure authority includes `/v2.0`:
-```csharp
-options.Authority = "https://login.microsoftonline.com/{tenantId}/v2.0";
-```
+**Solution**: 
+- Managed identities should always use v2.0 endpoint (this is automatic)
+- Verify you're not mixing user authentication with managed identity authentication
+- The library is already configured correctly for v2.0
 
-### Issue: Wrong Object ID in Environment Variable
+#### 4. Wrong Object ID in Environment Variable
 
-**Cause**: Multiple managed identities in the same resource group, wrong one selected.
+**Symptoms**: Authentication fails even though configuration looks correct.
 
-**Solution**: Check in Azure Portal:
-1. Go to Azure Portal → Managed Identities
-2. Find your identity by name
-3. Note the **Object (principal) ID**
-4. Verify it matches `ASPIRE_EXTENSIONS_ALLOWED_PRINCIPAL_IDS` value
+**Cause**: Multiple managed identities exist, wrong one is being validated.
 
-## Testing
+**Solution**: Verify the Object ID in Azure Portal:
+1. Go to **Azure Portal** → **Managed Identities**
+2. Find your identity by name (e.g., "backendapi-identity")
+3. Copy the **Object (principal) ID**
+4. In your deployed Container App, check **Environment Variables** tab
+5. Verify `ASPIRE_EXTENSIONS_ALLOWED_PRINCIPAL_IDS` matches the Object ID
 
-### Local Development
+#### 5. Service-to-Service Call Returns 401
 
-In development mode, authentication is **optional** by default. To test authentication locally:
+**Symptoms**: BackendApi → AIService calls fail with 401 Unauthorized.
 
-1. Set up Azure AD App Registration
-2. Use Azure CLI to authenticate: `az login`
-3. Run services with environment variable:
-   ```bash
-   ASPIRE_EXTENSIONS_ALLOWED_PRINCIPAL_IDS=your-test-oid
+**Checklist**:
+- [ ] Azure AD App Registration created with correct Client ID
+- [ ] App Registration has "Expose an API" configured
+- [ ] Calling service uses correct scope: `api://{ClientId}/.default`
+- [ ] Protected service uses correct audience: just the Client ID GUID
+- [ ] Both services have managed identities assigned
+- [ ] `AllowManagedIdentities()` called in AppHost
+- [ ] Both services deployed to Azure (local dev may behave differently)
+
+**Debug Steps**:
+1. Check Container App logs for both services
+2. Verify environment variable is set correctly
+3. Test token acquisition separately using Azure CLI
+4. Enable detailed authentication logging
+
+### Validation Checklist
+
+After deployment, verify:
+
+1. **Container Apps have managed identities assigned**:
+   - Go to Container App → Identity → User assigned
+   - Should show the identity name
+
+2. **Environment variables are set**:
+   - Go to Container App → Containers → Environment variables
+   - Find `ASPIRE_EXTENSIONS_ALLOWED_PRINCIPAL_IDS`
+   - Should be a GUID, not a literal string like `{backendapi-identity.outputs.principalId}`
+
+3. **Logs show successful authentication**:
+   ```
+   Successfully authenticated authorized managed identity (OID): 5e9ccc1b-...
    ```
 
-### Production Validation
-
-After deployment, check logs in Azure Container Apps:
-
-1. **Successful authentication**:
-   ```
-   Successfully authenticated authorized managed identity (OID): 5e9ccc1b-12c0-460f-be42-585ac084ba52
-   ```
-
-2. **Failed authentication**:
-   ```
-   Rejected unauthorized principal: (null). Allowed: 5e9ccc1b-12c0-460f-be42-585ac084ba52
-   ```
-
-3. **Debug claims**:
-   ```
-   JWT Claims: aud=..., iss=..., http://schemas.microsoft.com/identity/claims/objectidentifier=...
-   ```
+4. **Service-to-service calls succeed**:
+   - Test the endpoint from Aspire dashboard or direct HTTP call
+   - Should return 200 OK with expected data
 
 ## Technical Deep Dive: JWT Token Structure
 
@@ -788,15 +910,77 @@ Azure AD signing keys are cached by the JWT Bearer middleware.
    - Azure CLI credential fallback
    - Visual Studio credential support
 
-## Conclusion
+---
 
-This solution provides a complete, production-ready implementation of service-to-service authentication using Azure Managed Identities in .NET Aspire. Key achievements:
+## Summary and Next Steps
 
-- ✅ **Declarative API** - Simple `.AllowManagedIdentities()` extension
-- ✅ **Proper bicep generation** - Uses `BicepOutputReference` for parameter references
-- ✅ **Runtime validation** - Checks Object IDs from JWT tokens
-- ✅ **Full integration** - Works seamlessly with Aspire's provisioning
-- ✅ **Production ready** - Comprehensive error handling and logging
-- ✅ **Documented** - Complete guide for end users
+### What We Built
 
-The implementation is ready for contribution to the Aspire project or use as a standalone extension.
+This feature provides complete service-to-service authentication for .NET Aspire using Azure Managed Identities:
+
+- ✅ **Simple API** - Just call `.AllowManagedIdentities()` in AppHost
+- ✅ **Zero secrets** - Uses managed identities, no connection strings or keys
+- ✅ **Production ready** - Proper JWT validation with Azure AD
+- ✅ **Automatic provisioning** - Bicep templates generated correctly
+- ✅ **Comprehensive validation** - Checks Object IDs from tokens
+- ✅ **Well tested** - Handles edge cases and provides clear error messages
+
+### For Aspire Team
+
+**Key Technical Achievements:**
+1. Proper use of `BicepOutputReference` to preserve structural information
+2. `ReferenceExpression.Create()` for multiple identity support
+3. Correct handling of JWT token claim URIs (managed identities use full URI types)
+4. Integration with Aspire's provisioning infrastructure
+5. Separation of hosting extensions and client libraries
+
+**Files Included:**
+- `Aspire.Hosting.Azure.ManagedIdentity/` - Hosting extensions
+- `Aspire.Azure.ManagedIdentity.Client/` - Service library
+- Tests and samples
+
+### For End Users
+
+**To use this feature:**
+1. Add NuGet packages to your projects
+2. Call `.AllowManagedIdentities()` in AppHost (5 lines of code)
+3. Call `.AddManagedIdentityAuthentication()` in protected service (3 lines)
+4. Call `.AddManagedIdentityAuth()` on HttpClient in calling service (1 line)
+5. Deploy with `azd up`
+
+**That's it!** Your services now have secure, production-ready authentication.
+
+### Future Enhancements
+
+Potential improvements for consideration:
+
+1. **Support for unlimited identities** - Currently limited to 4
+   - Could use array parameters in bicep
+   
+2. **Automatic AAD App Registration** - Create via bicep
+   - Requires Service Principal with AAD permissions
+   
+3. **Dashboard integration** - Show auth status in Aspire dashboard
+   - Display allowed/rejected identities
+   
+4. **Policy-based authorization** - Beyond authentication
+   - Role-based access control
+   - Claim-based policies
+
+5. **Enhanced local development** - Better dev mode testing
+   - Azure CLI credential fallback
+   - Visual Studio credential support
+
+---
+
+## Appendix: Complete Code Reference
+
+All implementation code is shown in the sections above. Key files:
+
+- **ManagedIdentityAuthExtensions.cs** - `.AllowManagedIdentities()` extension method
+- **ManagedIdentityAuthServiceExtensions.cs** - `.AddManagedIdentityAuthentication()` setup
+- **ManagedIdentityHttpClientExtensions.cs** - `.AddManagedIdentityAuth()` for HttpClient
+- **ManagedIdentityAuthConstants.cs** - Shared constants
+- **ManagedIdentityEnvironmentVariables.cs** - Environment variable names
+
+For complete source code, see the implementation sections above.
