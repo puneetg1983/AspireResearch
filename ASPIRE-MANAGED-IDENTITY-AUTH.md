@@ -141,8 +141,11 @@ app.Run();
 
 ```bash
 # From AppHost directory
-azd init
-azd up
+dotnet run --project AppHost
+# In the Aspire dashboard, click "Deploy" and follow the wizard
+
+# Or use CLI:
+aspire deploy
 ```
 
 **What happens during deployment:**
@@ -688,6 +691,24 @@ In development mode, authentication is **optional by default**. To test authenti
    ```
 4. Run your services
 
+### Deployment Options
+
+You can deploy to Azure using:
+
+**Option 1: Aspire Dashboard (Recommended)**
+```bash
+dotnet run --project AppHost
+# Click "Deploy" button in the dashboard UI
+# Follow the deployment wizard
+```
+
+**Option 2: CLI**
+```bash
+aspire deploy
+```
+
+Both methods will generate bicep templates and deploy to Azure Container Apps.
+
 ### Logging and Monitoring
 
 The feature logs authentication events:
@@ -946,7 +967,7 @@ This feature provides complete service-to-service authentication for .NET Aspire
 2. Call `.AllowManagedIdentities()` in AppHost (5 lines of code)
 3. Call `.AddManagedIdentityAuthentication()` in protected service (3 lines)
 4. Call `.AddManagedIdentityAuth()` on HttpClient in calling service (1 line)
-5. Deploy with `azd up`
+5. Deploy with `aspire deploy` or via Aspire dashboard
 
 **That's it!** Your services now have secure, production-ready authentication.
 
