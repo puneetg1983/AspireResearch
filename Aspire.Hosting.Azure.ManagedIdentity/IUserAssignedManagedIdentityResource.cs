@@ -1,5 +1,3 @@
-using Aspire.Hosting.ApplicationModel;
-
 namespace Aspire.Hosting.Azure;
 
 /// <summary>
@@ -12,22 +10,4 @@ public interface IUserAssignedManagedIdentityResource : IResourceWithEnvironment
     /// Gets the name of the user-assigned managed identity.
     /// </summary>
     new string Name { get; }
-    
-    /// <summary>
-    /// Gets the resource that owns this managed identity.
-    /// </summary>
-    IResource Owner { get; }
-}
-
-/// <summary>
-/// Implementation of a user-assigned managed identity resource.
-/// </summary>
-internal class UserAssignedManagedIdentityResource : Resource, IUserAssignedManagedIdentityResource
-{
-    public UserAssignedManagedIdentityResource(string name, IResource owner) : base(name)
-    {
-        Owner = owner;
-    }
-
-    public IResource Owner { get; }
 }

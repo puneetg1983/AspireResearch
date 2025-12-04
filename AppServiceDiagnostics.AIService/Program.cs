@@ -9,11 +9,13 @@ builder.AddServiceDefaults();
 // Add Azure Chat Completions client using Aspire 13 specifications
 builder.AddAzureChatCompletionsClient("foundry");
 
-// Configure managed identity authentication
+// Add managed identity authentication
+// Validate against the AAD app's client ID (audience in the token)
 builder.Services.AddManagedIdentityAuthentication(
     builder.Configuration,
     builder.Environment,
-    "https://management.azure.com");
+    scope: "1d922779-2742-4cf2-8c82-425cf2c60aa8",
+    tenantId: "72f988bf-86f1-41af-91ab-2d7cd011db47");
 
 // Add services to the container.
 builder.Services.AddControllers();
@@ -35,11 +37,8 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 // Enable managed identity authentication middleware
-app.UseAuthentication();
-app.UseAuthorization();
+app.UseManagedIdentityAuthentication(app.Environment);
 
 app.MapControllers();
-
 app.MapDefaultEndpoints();
-
 app.Run();

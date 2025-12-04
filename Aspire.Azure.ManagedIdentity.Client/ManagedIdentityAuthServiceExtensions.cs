@@ -26,19 +26,15 @@ public static class ManagedIdentityAuthServiceExtensions
         this IServiceCollection services,
         IConfiguration configuration,
         IHostEnvironment environment,
-        string scope)
+        string scope,
+        string tenantId)
     {
-        var requireAuth = configuration.GetValue<bool>(ManagedIdentityAuthConstants.RequireManagedIdentityAuthKey);
-
-        if (requireAuth && environment.IsProduction())
+        if (environment.IsProduction())
         {
-            var tenantId = configuration[ManagedIdentityAuthConstants.AzureTenantIdKey] 
-                ?? throw new InvalidOperationException($"{ManagedIdentityAuthConstants.AzureTenantIdKey} must be configured in Production when {ManagedIdentityAuthConstants.RequireManagedIdentityAuthKey} is enabled");
-
             services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 .AddJwtBearer(options =>
                 {
-                    options.Authority = $"https://login.microsoftonline.com/{tenantId}";
+                    options.Authority = $"https://login.microsoftonline.com/{tenantId}/v2.0";
                     options.Audience = scope;
                     
                     options.TokenValidationParameters = new TokenValidationParameters
@@ -46,7 +42,12 @@ public static class ManagedIdentityAuthServiceExtensions
                         ValidateIssuer = true,
                         ValidateAudience = true,
                         ValidateLifetime = true,
-                        ValidateIssuerSigningKey = true
+                        ValidateIssuerSigningKey = true,
+                        ValidIssuers = new[]
+                        {
+                            $"https://login.microsoftonline.com/{tenantId}/v2.0",
+                            $"https://sts.windows.net/{tenantId}/"
+                        }
                     };
 
                     options.Events = new JwtBearerEvents
@@ -66,23 +67,31 @@ public static class ManagedIdentityAuthServiceExtensions
                                 .GetRequiredService<ILoggerFactory>()
                                 .CreateLogger("ManagedIdentityAuth");
                             var config = context.HttpContext.RequestServices.GetRequiredService<IConfiguration>();
-                            var clientId = context.Principal?.Claims.FirstOrDefault(c => c.Type == "appid")?.Value;
                             
-                            // Get allowed client IDs from configuration (comma-separated)
-                            var allowedClientIds = config[ManagedIdentityAuthConstants.AllowedClientIdsKey]?.Split(',', StringSplitOptions.RemoveEmptyEntries);
+                            // Try multiple claim types that might contain the principal/object ID
+                            // Managed identity tokens use full URI claim types
+                            var principalId = context.Principal?.Claims.FirstOrDefault(c => 
+                                c.Type == "http://schemas.microsoft.com/identity/claims/objectidentifier" || // Full URI (most common for managed identities)
+                                c.Type == "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier" || // Alternative URI
+                                c.Type == "oid" ||           // Short name (user tokens)
+                                c.Type == "sub"              // Subject claim (fallback)
+                            )?.Value;
                             
-                            if (allowedClientIds != null && allowedClientIds.Length > 0)
+                            // Get allowed principal IDs (Object IDs) from configuration (comma-separated)
+                            var allowedPrincipalIds = config[ManagedIdentityAuthConstants.AllowedPrincipalIdsKey]?.Split(',', StringSplitOptions.RemoveEmptyEntries);
+
+                            if (allowedPrincipalIds != null && allowedPrincipalIds.Length > 0)
                             {
-                                if (clientId == null || !allowedClientIds.Contains(clientId))
+                                if (principalId == null || !allowedPrincipalIds.Contains(principalId))
                                 {
-                                    logger.LogWarning("Rejected unauthorized client: {ClientId}. Allowed: {AllowedClientIds}", 
-                                        clientId, string.Join(", ", allowedClientIds));
+                                    logger.LogWarning("Rejected unauthorized principal: {PrincipalId}. Allowed: {AllowedPrincipalIds}", 
+                                        principalId, string.Join(", ", allowedPrincipalIds));
                                     context.Fail("Unauthorized client identity");
                                     return Task.CompletedTask;
                                 }
                             }
                             
-                            logger.LogInformation("Successfully authenticated authorized managed identity: {ClientId}", clientId);
+                            logger.LogInformation("Successfully authenticated authorized managed identity (OID): {PrincipalId}", principalId);
                             return Task.CompletedTask;
                         }
                     };

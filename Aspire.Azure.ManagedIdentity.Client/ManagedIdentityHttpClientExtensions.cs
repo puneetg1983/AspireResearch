@@ -1,5 +1,7 @@
 using Aspire.Azure.ManagedIdentity.Client;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Microsoft.Extensions.Hosting;
 
@@ -17,8 +19,8 @@ public static class ManagedIdentityHttpClientExtensions
     {
         builder.Services.AddTransient(sp => new ManagedIdentityAuthHandler(
             sp.GetRequiredService<IHostEnvironment>(),
-            sp.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>(),
-            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<ManagedIdentityAuthHandler>>(),
+            sp.GetRequiredService<IConfiguration>(),
+            sp.GetRequiredService<ILogger<ManagedIdentityAuthHandler>>(),
             scope));
         builder.AddHttpMessageHandler<ManagedIdentityAuthHandler>();
         return builder;

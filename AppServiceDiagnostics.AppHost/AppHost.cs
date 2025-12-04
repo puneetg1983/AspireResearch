@@ -1,3 +1,5 @@
+using Aspire.Hosting;
+using Aspire.Hosting.Azure;
 using Azure.Provisioning.KeyVault;
 
 var builder = DistributedApplication.CreateBuilder(args);
@@ -17,32 +19,34 @@ var cosmos = builder.AddAzureCosmosDB("cosmos-db");
 var foundry = builder.AddAzureAIFoundry("foundry");
 var chat = foundry.AddDeployment("chat", "gpt-4o-mini", "2024-07-18", "OpenAI");
 
-builder.AddAzureContainerAppEnvironment("env");
 
 builder.WithSecureDefaults();
+
+builder.AddAzureContainerAppEnvironment("env");
+
+// Provision user-assigned managed identities
+var backendApiIdentity = builder.AddAzureUserAssignedIdentity("backendapi-identity");
+var aiServiceIdentity = builder.AddAzureUserAssignedIdentity("aiservice-identity");
+
+// AIService: has its own identity and validates incoming tokens from BackendApi
+var aiService = builder.AddProject<Projects.AppServiceDiagnostics_AIService>("aiservice")
+    .WithHttpHealthCheck("/health")
+    .WithReference(foundry)
+    .WaitFor(foundry)
+    .WithAzureUserAssignedIdentity(aiServiceIdentity)
+    .AllowManagedIdentities(backendApiIdentity);
+
 
 // BackendApi: will use managed identity to call AIService
 var backendApi = builder.AddProject<Projects.BackendApi>("backendapi")
     .WithHttpHealthCheck("/health")
+    .WithAzureUserAssignedIdentity(backendApiIdentity)
     .WithReference(cache)
     .WaitFor(cache)
     .WithReference(secrets)
     .WithRoleAssignments(secrets, KeyVaultBuiltInRole.KeyVaultSecretsUser, KeyVaultBuiltInRole.KeyVaultCertificateUser)
     .WithReference(cosmos)
-    .WaitFor(cosmos);
-
-// Provision user-assigned managed identity for BackendApi
-var backendApiIdentity = backendApi.WithUserAssignedManagedIdentity();
-
-// AIService: will validate incoming managed identity tokens from BackendApi only
-var aiService = builder.AddProject<Projects.AppServiceDiagnostics_AIService>("aiservice")
-    .WithHttpHealthCheck("/health")
-    .WithReference(foundry)
-    .WaitFor(foundry)
-    .AllowManagedIdentities(backendApiIdentity);
-
-// Complete BackendApi configuration with AIService reference
-backendApi
+    .WaitFor(cosmos)
     .WithReference(aiService)
     .WaitFor(aiService);
 

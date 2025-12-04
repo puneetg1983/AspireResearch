@@ -29,18 +29,28 @@ public class ManagedIdentityAuthHandler : DelegatingHandler
         _logger = logger;
         _scope = scope;
 
-        // Only enable in Production when explicitly configured
-        _isEnabled = _configuration.GetValue<bool>(ManagedIdentityAuthConstants.UseManagedIdentityAuthKey) && 
-                     _environment.IsProduction();
+        // Enable in Production automatically (Aspire sets AZURE_CLIENT_ID when identity is assigned)
+        _isEnabled = _environment.IsProduction();
 
         if (_isEnabled)
         {
-            _credential = new DefaultAzureCredential();
-            _logger.LogInformation("Managed identity authentication enabled for service-to-service calls");
+            // Check if Aspire has configured a specific user-assigned managed identity
+            var clientId = _configuration["AZURE_CLIENT_ID"];
+
+            if (string.IsNullOrEmpty(clientId))
+            {
+                throw new InvalidOperationException(
+                    "Managed identity authentication is enabled, but no AZURE_CLIENT_ID is configured. " +
+                    "Ensure that the Aspire-managed user-assigned managed identity is assigned to this service.");
+            }
+
+            // Use ManagedIdentityCredential with the specific client ID set by Aspire
+            _credential = new ManagedIdentityCredential(clientId);
+            _logger.LogInformation("Managed identity authentication enabled with client ID: {ClientId}", clientId);
         }
         else
         {
-            _logger.LogInformation("Managed identity authentication disabled in {Environment} environment", 
+            _logger.LogInformation("Managed identity authentication disabled in {Environment} environment",
                 _environment.EnvironmentName);
         }
     }
@@ -53,15 +63,16 @@ public class ManagedIdentityAuthHandler : DelegatingHandler
         {
             try
             {
+                _logger.LogInformation("Acquiring managed identity token for scope {scope} to {Uri}", _scope, request.RequestUri);
                 var tokenResult = await _credential.GetTokenAsync(
-                    new TokenRequestContext(new[] { _scope }),
-                    cancellationToken);
+                    new TokenRequestContext([_scope]),
+                    cancellationToken);                
 
                 request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
                     "Bearer",
                     tokenResult.Token);
 
-                _logger.LogDebug("Added managed identity token to request to {Uri}", request.RequestUri);
+                _logger.LogInformation("Added managed identity token {token} to request to {Uri}", tokenResult.Token[..100], request.RequestUri);
             }
             catch (Exception ex)
             {
