@@ -9,6 +9,8 @@ var cache = builder.AddRedis("cache");
 // Add Ev2 deployment support
 builder.AddEv2Environment();
 
+builder.AddOneBranchPipeline();
+
 // Conditionally update Secrets based on new KeyVault or existing Connection String
 // var secrets = builder.ExecutionContext.IsPublishMode ? builder.AddAzureKeyVault("azurekv") : builder.AddConnectionString("azurekv");
 var secrets = builder.AddAzureKeyVault("azurekv");
@@ -26,6 +28,7 @@ builder.AddAzureContainerAppEnvironment("env");
 
 // Provision user-assigned managed identities
 var backendApiIdentity = builder.AddAzureUserAssignedIdentity("backendapi-identity");
+
 var aiServiceIdentity = builder.AddAzureUserAssignedIdentity("aiservice-identity");
 
 // AIService: has its own identity and validates incoming tokens from BackendApi

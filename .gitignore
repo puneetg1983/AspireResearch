@@ -464,3 +464,4 @@ k8s-*.yml
 
 # Azure artifacts
 *.zip
+/aspire.publish
